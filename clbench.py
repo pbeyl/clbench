@@ -21,15 +21,15 @@ config = []
 if platform.system() == "Windows":
     OS = "Windows"
     clearterminal = "cls"
-    #chromebin = BaseDir + "\\win\\chromium-88\\chrome.exe"
     profile_path = BaseDir + "\\Chrome\\Default"
     datafile = BaseDir + "\\test_results.csv"
+    urllist = BaseDir + "\\urls.csv"
 elif platform.system() == "Darwin":
     OS = "OS X"
     clearterminal = "clear"
-    #chromebin = BaseDir + "/osx/Chromium.app/Contents/MacOS/Chromium"
     profile_path = BaseDir + "/Chrome/Default"
     datafile = BaseDir + "/test_results.csv"
+    urllist = BaseDir + "/urls.csv"
 else:
     print("Linux support not available yet.")
     quit()
@@ -49,6 +49,48 @@ def saveconfig():
     with open('config.json', 'w') as file:
         json.dump(config, file)
         file.close()
+
+
+def graph_data():
+    data = []
+    # Read urls from .csv file
+    with open(datafile, 'r') as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            data.append(row)
+        # print(data)
+        file.close()
+
+    fields = list(data[0])
+    plt.suptitle("Cloud Experience Benchmark", fontsize=16, fontweight='bold')
+    plt.title("smaller load time is better/quicker")
+    plt.xlabel("Sites Tested")
+    plt.ylabel("Load Time (ms)")
+
+    plt.xticks(rotation=90, fontsize=7)
+    plt.subplots_adjust(bottom=0.35)
+
+    #print(fields)
+
+    urls = []
+    for x in range(len(fields)):
+        result = []
+        series = fields[x]
+        for row in data:
+            if x == 0:
+                urls.append(row[series])
+            else:
+                result.append(int(row[series]))
+                print(int(row[series]))
+
+        if len(result) > 0:
+            plt.plot(urls, result, label=fields[x], marker='o')
+
+
+    plt.legend(loc='upper right')
+    print("Close graph window to continue")
+    plt.show()
 
 
 def runtest():
@@ -143,7 +185,7 @@ def runtest():
 
             print(row)
     except Exception as e:
-        print(e.__class__)
+        print(e)
         print("ERR: Test failed, did you close the browser window?")
         input("Press ENTER to continue...")
         return
@@ -161,48 +203,8 @@ def runtest():
         file.close()
 
     print("Test Completed, you can now plot the data using the graph menu option.")
-    input("Press ENTER to continue...")
-
-
-def graph_data():
-    data = []
-    # Read urls from .csv file
-    with open(datafile, 'r') as file:
-        reader = csv.DictReader(file)
-
-        for row in reader:
-            data.append(row)
-        # print(data)
-        file.close()
-
-    fields = list(data[0])
-    plt.suptitle("Cloud Experience Benchmark", fontsize=16, fontweight='bold')
-    plt.title("smaller load time is better/quicker")
-    plt.xlabel("Sites Tested")
-    plt.ylabel("Load Time (ms)")
-
-    plt.xticks(rotation=90, fontsize=7)
-    plt.subplots_adjust(bottom=0.35)
-
-    #print(fields)
-
-    urls = []
-    for x in range(len(fields)):
-        result = []
-        series = fields[x]
-        for row in data:
-            if x == 0:
-                urls.append(row[series])
-            else:
-                result.append(int(row[series]))
-
-        if len(result) > 0:
-            plt.plot(urls, result, label=fields[x], marker='o')
-
-
-    plt.legend(loc='upper right')
-    print("Close graph window to continue")
-    plt.show()
+    graph_data()
+    #input("Press ENTER to continue...")
 
 
 def loadlist():
@@ -218,7 +220,7 @@ def loadlist():
         input("\nPress ENTER to continue..")
         return 99
     else:
-        shutil.copyfile("urls.csv", datafile)
+        shutil.copyfile(urllist, datafile)
         print("Test data successfully reset.")
         input("\nPress ENTER to continue..")
 
@@ -405,8 +407,12 @@ def main():
         config = {"test_type": "direct", "proxy": "", "passes": 3, "incognito": "n"}
         saveconfig()
 
-    if not FileExistsError(profile_path):
+    if not os.path.isdir(profile_path):
         print("# Warning: Chrome profile not found, will create new one")
+
+    if not os.path.isfile(datafile):
+        shutil.copyfile(urllist, datafile)
+        print("Testing data successfully initialized.")
 
     while True:
         main_menu()
