@@ -7,6 +7,7 @@
 
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
+import requests
 import matplotlib.pyplot as plt
 import csv
 import platform
@@ -14,6 +15,9 @@ import os
 import re
 import shutil
 import json
+import certifi
+from cryptography import x509
+
 
 BaseDir = os.path.dirname(os.path.realpath(__file__))
 config = []
@@ -40,6 +44,7 @@ else:
 chrome_options = webdriver.chrome.options.Options()
 #chrome_options.binary_location = chromebin
 chrome_options.add_argument("--user-data-dir=" + profile_path)
+
 #chrome_options.add_argument("--auto-open-devtools-for-tabs")
 #chrome_options.add_argument("--headless")
 
@@ -82,7 +87,7 @@ def graph_data():
                 urls.append(row[series])
             else:
                 result.append(int(row[series]))
-                print(int(row[series]))
+                #print(int(row[series]))
 
         if len(result) > 0:
             plt.plot(urls, result, label=fields[x], marker='o')
@@ -91,6 +96,114 @@ def graph_data():
     plt.legend(loc='upper right')
     print("Close graph window to continue")
     plt.show()
+
+# Used to remove all LF and CR characters from strings in order to compare content
+def flat_string(input):
+    no_cr = input.replace('\r', '')
+    return no_cr.replace('\n', '')
+
+
+def addcert(mycert):
+    cafile = certifi.where()
+
+    b_mycert = bytes(flat_string(mycert), 'utf-8')
+    #print(b_mycert)
+
+    with open(cafile, 'r') as castore:
+        trustedcerts = castore.read()
+        castore.close()
+
+    b_trustedcerts = bytes(flat_string(trustedcerts), "utf-8")
+
+    if b_trustedcerts.find(b_mycert) != -1:
+        print('Not installed, Custom CA cert already present in Certifi store.')
+    else:
+        with open(cafile, 'ab') as castore:
+            castore.write(bytes(mycert, 'utf-8'))
+            castore.close()
+            print('Successfully installed Custom CA cert to Certifi store.')
+
+    input("\nPress <ENTER> to continue")
+    return
+
+
+def netskopecert():
+    with open('caadmin.netskope.com.pem', 'r') as infile:
+        customca = infile.read()
+        infile.close()
+    addcert(customca)
+
+    return
+
+
+def customcert():
+    #customca = input("Paste Base64 encoded(PEM) certificate, enter on new line to continue: ")
+    print("Enter/Paste your Base64 encoded(PEM) certificate. <ENTER> on blank line to save it.")
+
+    contents = []
+    while True:
+        line = input()
+        if line == "":
+            break
+        contents.append(line)
+
+    customcert = '\r\n'.join(contents) + "\r\n"
+
+    #customcert.strip('\r\n')
+    #customcert.strip('\r\n')
+    #print(bytes(customcert, 'utf-8'))
+    try:
+        cert = x509.load_pem_x509_certificate(bytes(customcert, 'utf-8'))
+        print('Certificate: ' + str(cert.subject))
+    except ValueError as val:
+        print("Invalid input detected, unable to decode certificate.")
+        input("\nPress <ENTER> to continue")
+        return
+
+
+    # Call addcert method with byte string
+    addcert(customcert)
+
+    return
+
+
+def set_customcert():
+    while True:
+
+        print("\n## Import Custom Certificate ##")
+        print("--------------------------------\n")
+        print("1. Install Netskope Decryption Cert")
+        print("2. Paste BASE64 encoded PEM on cli")
+        print("5. Return to previous menu")
+        try:
+            choice = int(input("\nEnter a menu option: "))
+        except Exception:
+            choice = 99
+
+        choices = {
+            1: netskopecert,
+            2: customcert,
+            5: exitmenu,
+        }
+        act = choices.get(choice, default)()
+        if act == 99:
+            break
+
+        os.system(clearterminal)
+
+def install_cert():
+    os.system(clearterminal)
+
+    try:
+        print('Checking connection to googleapis...')
+        test = requests.get('https://chromedriver.storage.googleapis.com')
+        print('Connection OK, custom certificate installation probably not required')
+    except requests.exceptions.SSLError as err:
+        print('SSL Error, it might be required to install a proxy decryption certificate.\n')
+
+    set_customcert()
+
+    return
 
 
 def runtest():
@@ -107,7 +220,7 @@ def runtest():
         print("ERR: Invalid input [ " + test_label + " ], try again")
         test_label = input("\nInput test label: ")
 
-    print("\n## Testing Parameters ##")
+    print("\n## Test Information ##")
     print("-----------------------\n")
     print("Label: " + test_label)
     print("Test Type: " + config["test_type"])
@@ -118,10 +231,10 @@ def runtest():
     if re.match("^y|yes$", config["incognito"], re.IGNORECASE):
         chrome_options.add_argument("--incognito")
     print("")
-    choice = input("Are the parameters correct, initiate test? (y/n): ")
+    choice = input("Is the settings correct, initiate test? (y/n): ")
     while not re.match("^y|yes|n|no$", choice, re.IGNORECASE):
         print("ERR: Invalid input [ " + choice + " ], try again")
-        choice = input("\nAre the parameters correct, initiate test? (y/n): ")
+        choice = input("\nIs the settings correct, initiate test? (y/n): ")
 
     if str.lower(choice[0]) == "n":
         os.system(clearterminal)
@@ -130,6 +243,43 @@ def runtest():
     os.system(clearterminal)
     print("Initiating test. Loading new Chrome session, clear of any cache")
     print("NB: Do not interact with or close the script or chrome browser window until tests have been completed!\n")
+
+    try:
+        mychromedriver = ChromeDriverManager(log_level=0, cache_valid_range=7)
+        mychromedriverexe = mychromedriver.install()
+    except requests.exceptions.SSLError as err:
+        #install_cert()
+        print("Test Failed: SSL/TLS Interception detected, install the decryption certificate using ""Test Settings"" menu item")
+        input("Press <ENTER> to continue...")
+        return
+    except Exception as e:
+        print(e.__doc__)
+        print(e.__context__)
+
+        '''
+        chrome_type = ChromeType.GOOGLE
+        browser_version = chrome_version(chrome_type)
+        driver_name = mychromedriver.driver.get_name()
+        os_type = mychromedriver.driver.get_os_type()
+        driver_version = mychromedriver.driver.get_version()
+
+        mychromedriverexe = mychromedriver.driver_cache.find_driver(browser_version, driver_name, os_type,
+                                                    driver_version)
+                                                    '''
+        print("Test Failed: Could not download the required chrome webdriver")
+        input("Press <ENTER> to continue...")
+        return
+
+    #print(binary_path)
+    #print(mychromedriverexe)
+
+
+    try:
+        test_detail = requests.get('http://ip-api.com/json', verify=False).text
+        print("Test Detail: " + test_detail)
+    except Exception as e:
+        print(e.__doc__)
+        print(e.__context__)
 
     data = []
     # Read urls from .csv file
@@ -145,7 +295,7 @@ def runtest():
 
     try:
         #driver = webdriver.Chrome(chromedriver, options=chrome_options)
-        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+        driver = webdriver.Chrome(mychromedriverexe, options=chrome_options)
 
         for row in data:
             summ = 0
@@ -185,9 +335,10 @@ def runtest():
 
             print(row)
     except Exception as e:
-        print(e)
+        print(e.__doc__)
+        print(e.__context__)
         print("ERR: Test failed, did you close the browser window?")
-        input("Press ENTER to continue...")
+        input("Press <ENTER> to continue...")
         return
 
     driver.quit()
@@ -234,6 +385,7 @@ def info():
     print("Proxy: " + config["proxy"])
     print("GET Requests per Site: " + str(config["passes"]))
     print("Working Directory: " + BaseDir)
+    print("Trusted CA Store: " + certifi.where())
     print("Data File: test_results.csv")
 
     data = []
@@ -304,7 +456,7 @@ def typeproxy():
 
 
 def exitmenu():
-    print("return to main menu")
+    print("Return to main menu")
     return 99
 
 
@@ -342,14 +494,15 @@ def settings_menu():
     while True:
         os.system(clearterminal)
 
-        print("## Testing Parameters ##")
+        print("## Testing Settings ##")
         print("------------------------\n")
         print("1. Edit test method [" + config["test_type"] + "]")
         print("2. Edit proxy settings [" + config["proxy"] + "]")
         print("3. Edit number of Requests per URL [" + str(config["passes"]) + "]")
         print("4. Edit incognito mode [" + str(config["incognito"]) + "]")
-        print("5. Display Info")
-        print("6. Return to previous menu")
+        print("5. Install Decryption Certificate")
+        print("6. Display Info")
+        print("7. Return to previous menu")
         try:
             choice = int(input("\nEnter a menu option: "))
         except Exception:
@@ -360,8 +513,9 @@ def settings_menu():
             2: setproxy,
             3: setpasses,
             4: setincognito,
-            5: info,
-            6: exitmenu,
+            5: install_cert,
+            6: info,
+            7: exitmenu,
         }
         act = choices.get(choice, default)()
         if act == 99:
@@ -374,10 +528,10 @@ def main_menu():
     print("## Page Load Timer ##")
     print("---------------------\n")
     print("1. Run Test")
-    print("2. Testing parameters")
-    print("3. Clear Test Results")
+    print("2. Settings")
+    print("3. Clear Results")
     print("4. Display Info")
-    print("5. Graph test results")
+    print("5. Graph Results")
     print("6. Exit")
     try:
         choice = int(input("\nEnter a menu option: "))
