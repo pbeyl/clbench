@@ -6,6 +6,7 @@
 
 
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, InvalidArgumentException, NoSuchWindowException
 from webdriver_manager.chrome import ChromeDriverManager
 import requests
 import matplotlib.pyplot as plt
@@ -35,11 +36,13 @@ elif platform.system() == "Darwin":
     datafile = BaseDir + "/test_results.csv"
     urllist = BaseDir + "/urls.csv"
 else:
-    print("Linux support not available yet.")
-    quit()
+    print("WARNING: Linux is untested, please report bugs?")
+    #quit()
     OS = "Linux"
     clearterminal = "clear"
     profile_path = BaseDir + "/Chrome/Default"
+    datafile = BaseDir + "/test_results.csv"
+    urllist = BaseDir + "/urls.csv"
 
 chrome_options = webdriver.chrome.options.Options()
 #chrome_options.binary_location = chromebin
@@ -241,7 +244,19 @@ def runtest():
         return 99
 
     os.system(clearterminal)
-    print("Initiating test. Loading new Chrome session, clear of any cache")
+    if config["clear_storage"] == "y":
+        print("Clearing Chrome Profile..")
+        try:
+            if os.path.exists(profile_path):
+                shutil.rmtree(profile_path)
+                print("Successfully removed the Chrome Profile")
+            else:
+                print("No existing Chrome profile found")
+        except Exception as ex:
+            print("Failed to delete the Chrome Profile")
+        # driver.execute_script('window.localStorage.clear();')
+
+    print("Initiating test. Loading new Chrome session")
     print("NB: Do not interact with or close the script or chrome browser window until tests have been completed!\n")
 
     try:
@@ -291,17 +306,33 @@ def runtest():
         # print(data)
         file.close()
 
-
-
     try:
         #driver = webdriver.Chrome(chromedriver, options=chrome_options)
         driver = webdriver.Chrome(mychromedriverexe, options=chrome_options)
+        driver.set_page_load_timeout(20)    #Set page load timeout
+
 
         for row in data:
             summ = 0
-            for i in range(config["passes"]):
-                # GET link consecutively for number of passes
-                driver.get(row['url'])
+            i = 0
+
+            # GET link consecutively for number of passes
+            while i < config["passes"]:
+
+                i = i + 1
+
+                try:
+                    driver.get(row['url'])
+                except TimeoutException as ex:
+                    print("Timeout occurred requesting site, retrying pass")
+                    i = i - 1
+
+                    continue
+                except InvalidArgumentException as ex:
+                    print("ERR: Test failed, close any open Chrome browsers and re-run the test.")
+                    #print(ex.__doc__)
+                except Exception as e:
+                    print(e.__doc__)
 
                 navigationStart = driver.execute_script("return window.performance.timing.navigationStart")
                 redirectStart = driver.execute_script("return window.performance.timing.redirectStart")
@@ -334,10 +365,15 @@ def runtest():
             row[test_label] = (int)(summ / config["passes"])  # calculate the average
 
             print(row)
+
+    except NoSuchWindowException as ex:
+        print("ERR: Test failed, did you close the browser window?")
+        input("Press <ENTER> to continue...")
+        return
     except Exception as e:
         print(e.__doc__)
         print(e.__context__)
-        print("ERR: Test failed, did you close the browser window?")
+        print("ERR: Test failed.")
         input("Press <ENTER> to continue...")
         return
 
@@ -558,7 +594,7 @@ def main():
             file.close()
     except Exception:
         print("## Warning: Could not load config.json so loading default settings")
-        config = {"test_type": "direct", "proxy": "", "passes": 3, "incognito": "n"}
+        config = {"test_type": "direct", "proxy": "", "passes": 3, "incognito": "n", "clear_storage": "y"}
         saveconfig()
 
     if not os.path.isdir(profile_path):
