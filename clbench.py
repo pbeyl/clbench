@@ -17,6 +17,7 @@ import re
 import shutil
 import json
 import certifi
+import datetime
 from cryptography import x509
 
 
@@ -99,6 +100,66 @@ def graph_data():
     plt.legend(loc='upper right')
     print("Close graph window to continue")
     plt.show()
+
+def del_test():
+    os.system(clearterminal)
+    
+    data = []
+    i = 1
+    
+    print("\n## Choose a Test to Delete ##")
+    print("-------------------------------\n")
+    
+    # Read urls from .csv file
+    with open(datafile, 'r') as file:
+        reader = csv.DictReader(file)
+        
+        
+        for row in reader:
+            tests = list(row)
+            tests.pop(0)
+            #print(tests)
+            for test in tests:
+                print(str(i) + ". " + test)
+                i = i + 1
+            break
+
+            #row.pop('Direct')
+            #data.append(row)
+        #print(data)
+        file.close()
+
+    try:
+        choice = int(input("\nEnter a menu option: "))
+    except Exception:
+        choice = 99
+
+        
+    if choice == 99 or choice == 0:
+        return
+
+    with open(datafile, 'r') as file:
+        reader = csv.DictReader(file)
+        
+        for row in reader:
+            row.pop(tests[choice-1])
+            data.append(row)
+            
+        file.close()
+
+    # writing result metrics in file
+    fields = list(data[0])
+
+    with open(datafile, 'w') as file:
+        writer = csv.DictWriter(file, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(data)
+        file.close()
+
+
+    input("\nPress <ENTER> to continue")
+    return
+
 
 # Used to remove all LF and CR characters from strings in order to compare content
 def flat_string(input):
@@ -217,11 +278,19 @@ def runtest():
     if config["test_type"] == "proxy" and config["proxy"] == "":
         input("ERR: Cannot run proxy based test, configure proxy settings first")
         return 99
+    
+    if config["test_type"] == "pac" and config["pac"] == "":
+        input("ERR: Cannot run pac based test, configure pac settings first")
+        return 99
 
     test_label = input("Input test label: ")
     while not re.match("^.+$", test_label):
         print("ERR: Invalid input [ " + test_label + " ], try again")
         test_label = input("\nInput test label: ")
+    
+    currentDT = datetime.datetime.now()
+ 
+    test_label = test_label + currentDT.strftime("(%Y-%m-%d %H:%M)")
 
     print("\n## Test Information ##")
     print("-----------------------\n")
@@ -230,6 +299,9 @@ def runtest():
     if config["test_type"] == "proxy":
         print("Proxy: " + config["proxy"])
         chrome_options.add_argument("--proxy-server=" + config["proxy"])
+    if config["test_type"] == "pac":
+        print("Proxy: " + config["pac"])
+        chrome_options.add_argument("--proxy-pac-url=" + config["pac"])    
     print("Incognito Mode: " + config["incognito"])
     if re.match("^y|yes$", config["incognito"], re.IGNORECASE):
         chrome_options.add_argument("--incognito")
@@ -419,6 +491,7 @@ def info():
     print("Operating System: " + OS)
     print("Testing Method: " + config["test_type"])
     print("Proxy: " + config["proxy"])
+    print("PAC: " + config["pac"])
     print("GET Requests per Site: " + str(config["passes"]))
     print("Working Directory: " + BaseDir)
     print("Trusted CA Store: " + certifi.where())
@@ -451,6 +524,16 @@ def setproxy():
         return
     else:
         config["proxy"] = value
+        saveconfig()
+
+def setpac():
+    global config
+    value = input("Input proxy pac URL ( https://server:8080/proxy.pac ): ")
+    if not re.match("^https?:\/\/(?:[:.a-zA-Z0-9_\-]+\/)+(?:[.a-zA-Z0-9_\-])+$", value):
+        input("ERR: Invalid input [ " + value + " ], press enter to continue")
+        return
+    else:
+        config["pac"] = value
         saveconfig()
 
 
@@ -490,6 +573,11 @@ def typeproxy():
     saveconfig()
     return 99
 
+def typepac():
+    global config
+    config["test_type"] = "pac"
+    saveconfig()
+    return 99
 
 def exitmenu():
     print("Return to main menu")
@@ -504,10 +592,11 @@ def settest():
     while True:
         os.system(clearterminal)
 
-        print("## Set Test Type ##")
-        print("---------------------\n")
+        print("## Set Test Steering Type ##")
+        print("----------------------------\n")
         print("1. Direct")
         print("2. Proxy")
+        print("3. PAC")
         print("5. Return to previous menu")
         try:
             choice = int(input("\nEnter a menu option: "))
@@ -517,6 +606,7 @@ def settest():
         choices = {
             1: typedirect,
             2: typeproxy,
+            3: typepac,
             5: exitmenu,
         }
         act = choices.get(choice, default)()
@@ -534,11 +624,12 @@ def settings_menu():
         print("------------------------\n")
         print("1. Edit test method [" + config["test_type"] + "]")
         print("2. Edit proxy settings [" + config["proxy"] + "]")
-        print("3. Edit number of Requests per URL [" + str(config["passes"]) + "]")
-        print("4. Edit incognito mode [" + str(config["incognito"]) + "]")
-        print("5. Install Decryption Certificate")
-        print("6. Display Info")
-        print("7. Return to previous menu")
+        print("3. Edit pac settings [" + config["pac"] + "]")
+        print("4. Edit number of Requests per URL [" + str(config["passes"]) + "]")
+        print("5. Edit incognito mode [" + str(config["incognito"]) + "]")
+        print("6. Install Decryption Certificate")
+        print("7. Display Info")
+        print("8. Return to previous menu")
         try:
             choice = int(input("\nEnter a menu option: "))
         except Exception:
@@ -547,11 +638,12 @@ def settings_menu():
         choices = {
             1: settest,
             2: setproxy,
-            3: setpasses,
-            4: setincognito,
-            5: install_cert,
-            6: info,
-            7: exitmenu,
+            3: setpac,
+            4: setpasses,
+            5: setincognito,
+            6: install_cert,
+            7: info,
+            8: exitmenu,
         }
         act = choices.get(choice, default)()
         if act == 99:
@@ -568,7 +660,8 @@ def main_menu():
     print("3. Clear Results")
     print("4. Display Info")
     print("5. Graph Results")
-    print("6. Exit")
+    print("6. Delete Test")
+    print("7. Exit")
     try:
         choice = int(input("\nEnter a menu option: "))
     except Exception:
@@ -580,7 +673,8 @@ def main_menu():
         3: loadlist,
         4: info,
         5: graph_data,
-        6: close,
+        6: del_test,
+        7: close,
     }
     choices.get(choice, default)()
 
@@ -594,7 +688,7 @@ def main():
             file.close()
     except Exception:
         print("## Warning: Could not load config.json so loading default settings")
-        config = {"test_type": "direct", "proxy": "", "passes": 3, "incognito": "n", "clear_storage": "y"}
+        config = {"test_type": "direct", "proxy": "", "pac": "", "passes": 3, "incognito": "n", "clear_storage": "y"}
         saveconfig()
 
     if not os.path.isdir(profile_path):
